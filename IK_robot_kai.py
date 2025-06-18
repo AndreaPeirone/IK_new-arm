@@ -23,10 +23,11 @@ ctrl = DynamixelController(port_name="COM13", motor_list=motor_list, protocol=2.
 ctrl.activate_controller()
 
 #SET EXTENDED POSITION
-ctrl.set_operating_mode_all("extended_position_control")
-time.sleep(0.1)
+ctrl.torque_off()
+ctrl.set_operating_mode_all("current_based_position_control")
 ctrl.torque_on()
 print("All motors are now in extended‑position mode with torque enabled!")
+
 
 #SET VELOCITY
 set_velocity = 50
@@ -189,8 +190,13 @@ def Jacobian_orientation():
 def cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_inv):
     # timer = time.time()
     e = xyz_goal - xyz_old
-    print("error", e)
-    J = result_J(delta_rot_goal[0], delta_rot_goal[1], 
+    # print("error", e)
+    if moving_keeping_orientation:
+        J = result_J_orientation(delta_rot_goal[0], delta_rot_goal[1], 
+                 delta_rot_goal[2], delta_rot_goal[3], 
+                 delta_rot_goal[4], delta_rot_goal[5])
+    else:
+        J = result_J(delta_rot_goal[0], delta_rot_goal[1], 
                  delta_rot_goal[2], delta_rot_goal[3], 
                  delta_rot_goal[4], delta_rot_goal[5])
 
@@ -202,25 +208,33 @@ def cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_
     J_inv = np.dot(K_inv, np.dot(J_transposed, inv_JK_inv_J_transposed))
     delta_rot_goal += np.dot(J_inv, e)
     
-    print("delta_rot_current before boundaries", delta_rot_goal)
+    # print("delta_rot_current before boundaries", delta_rot_goal)
     delta_rot_goal, K_inv = check_boundaries(delta_rot_goal, K_inv)
-
-    end_effector = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
-                                       delta_rot_goal[2], delta_rot_goal[3], 
-                                       delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+    if moving_keeping_orientation:
+        end_effector = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1],
+                                                delta_rot_goal[2], delta_rot_goal[3], 
+                                                delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+    else:
+        end_effector = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1],
+                                                delta_rot_goal[2], delta_rot_goal[3], 
+                                                delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
     e = xyz_goal - end_effector
-    print("xyz_goal", xyz_goal)
-    print("end_effector evaluation", end_effector)
-    print("error", e)
-    print("norm error", norm(e))
-    print("stiffness matrix", np.diag(K_inv))
+    # print("xyz_goal", xyz_goal)
+    # print("end_effector evaluation", end_effector)
+    # print("error", e)
+    # print("norm error", norm(e))
+    # print("stiffness matrix", np.diag(K_inv))
     count = 0
     while np.linalg.norm(e) > threshold:
         count += 1
-        print("\niteration:", count)
-        J = result_J(delta_rot_goal[0], delta_rot_goal[1], 
-                     delta_rot_goal[2], delta_rot_goal[3], 
-                     delta_rot_goal[4], delta_rot_goal[5])
+        if moving_keeping_orientation:
+            J = result_J_orientation(delta_rot_goal[0], delta_rot_goal[1], 
+                    delta_rot_goal[2], delta_rot_goal[3], 
+                    delta_rot_goal[4], delta_rot_goal[5])
+        else:
+            J = result_J(delta_rot_goal[0], delta_rot_goal[1], 
+                    delta_rot_goal[2], delta_rot_goal[3], 
+                    delta_rot_goal[4], delta_rot_goal[5])
                 
         # J_inv = np.linalg.pinv(J, rcond=1e-5)
         J_transposed = J.T
@@ -230,21 +244,26 @@ def cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_
         J_inv = np.dot(K_inv, np.dot(J_transposed, inv_JK_inv_J_transposed))
         delta_rot_goal += np.dot(J_inv, e)
 
-        print("delta_rot_current before boundaries", delta_rot_goal)
+        # print("delta_rot_current before boundaries", delta_rot_goal)
         delta_rot_goal, K_inv = check_boundaries(delta_rot_goal, K_inv)
 
-        end_effector = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
-                                           delta_rot_goal[2], delta_rot_goal[3], 
-                                           delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
-        print("xyz_goal", xyz_goal)
-        print("end_effector evaluation", end_effector)
+        if moving_keeping_orientation:
+            end_effector = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1],
+                                                    delta_rot_goal[2], delta_rot_goal[3], 
+                                                    delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+        else:
+            end_effector = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1],
+                                                    delta_rot_goal[2], delta_rot_goal[3], 
+                                                    delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+        # print("xyz_goal", xyz_goal)
+        # print("end_effector evaluation", end_effector)
         e = xyz_goal - end_effector
-        print("error", e)
-        print("norm error", norm(e))
-        print("stiffness matrix", np.diag(K_inv))
+        # print("error", e)
+        # print("norm error", norm(e))
+        # print("stiffness matrix", np.diag(K_inv))
 
         if count == 10:
-            print("\nSATURATION OF ITERATIONS REACHED:", count)
+            # print("\nSATURATION OF ITERATIONS REACHED:", count)
             delta_rot_goal = delta_rot_old.copy()
             end_effector = xyz_old.copy()
             break
@@ -284,7 +303,7 @@ def check_boundaries(delta_rot_goal, K_inv_original):
     if delta_rot_goal[5] < eps:
         K_inv [5,5] = K_inv[5,5] / 1e10
 
-    print("delta_rot_current after boundaries", delta_rot_goal)
+    # print("delta_rot_current after boundaries", delta_rot_goal)
     return delta_rot_goal, K_inv
 
 def adjust_configuration(delta_rot_goal, delta_rot_old):
@@ -469,6 +488,27 @@ def update_goals_with_spacemouse_pitch_orientation(xyz_goal, pitch_angle, y_hat,
 
     return xyz_goal, pitch_angle
 
+def translation_keeping_orientation(xyz_goal, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, axes):
+    dz = - axes[3]
+    dx = - axes[2]
+    dy, droll, dpitch, dyaw = [0] * 4
+    dpitch_base = y_hat
+    pitch_angle += dpitch_base * gain_pitch 
+    if abs(pitch_angle) > np.deg2rad(60):
+        pitch_angle = np.sign(pitch_angle) * np.deg2rad(60)
+    Dx = dx * np.cos(pitch_angle) - dz * np.sin(pitch_angle)
+    Dz = dx * np.sin(pitch_angle) + dz * np.cos(pitch_angle) 
+
+    xyz_goal[0] += Dx * gain_translation 
+    xyz_goal[1] += dy * gain_translation
+    xyz_goal[2] += Dz * gain_translation
+    xyz_goal[3] += Dx * gain_translation
+    xyz_goal[4] += dy * gain_translation
+    xyz_goal[5] += Dz * gain_translation
+    # xyz_goal[3:6] = update_gripper_position(xyz_goal[:3], xyz_goal[3:6], droll * gain_rotation, dpitch * gain_rotation, dyaw * gain_rotation)
+
+    return xyz_goal, pitch_angle
+
 def update_gripper_position(P, Q, delta_theta_x_degrees, delta_theta_y_degrees, delta_theta_z_degrees):
     Q_x, Q_y, Q_z = Q
     delta_theta_x = np.deg2rad(delta_theta_x_degrees)/2
@@ -493,15 +533,15 @@ def update_gripper_position(P, Q, delta_theta_x_degrees, delta_theta_y_degrees, 
     updated_Q = P + rotated_direction
     return updated_Q
 
-def from_pose_get_cartesian(delta_rot_goal):
+def from_pose_get_cartesian(delta_rot_goal, pitch_angle):
     Rot = np.array([delta_rot_goal[1], delta_rot_goal[3], delta_rot_goal[5]])
     Delta = np.array([delta_rot_goal[0], delta_rot_goal[2], delta_rot_goal[4]])
     xyz_goal = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
                             delta_rot_goal[2], delta_rot_goal[3], 
                             delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
-    print("\nTotal bending for each section [deg]:", np.rad2deg(Delta))
-    print("Total rotation for each section [deg]:", np.rad2deg(Rot))
-    print("Pose reached [x_ee, y_ee, z_ee]:", xyz_goal)
+    # print("\nTotal bending for each section [deg]:", np.rad2deg(Delta))
+    # print("Total rotation for each section [deg]:", np.rad2deg(Rot))
+    # print("Pose reached [x_ee, y_ee, z_ee]:", xyz_goal)
     if Delta [0] > 0:
         motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3 = motor_mapping(Delta[0], norm(Delta[1]), norm(Delta[2]))
     else:
@@ -513,20 +553,21 @@ def from_pose_get_cartesian(delta_rot_goal):
     motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 2)
     motor_rot_section2 = convert_rad_to_motorposition(Rot[1], 3)
     motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 2)
+    motor_pitch = convert_rad_to_motorposition(pitch_angle, ((200/25) * (22/15))*2 )
     motors_position = [motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch]
-    print("Input for the rotary motors [4095 encoder based]:", motor_rot_section1, motor_rot_section2, motor_rot_section3)
-    print("Input for bending motors [4095 encoder based]:", motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3)
-    print("Input for all motors in daisy chain [4095 encoder based]:", motors_position)
+    # print("Input for the rotary motors [4095 encoder based]:", motor_rot_section1, motor_rot_section2, motor_rot_section3)
+    # print("Input for bending motors [4095 encoder based]:", motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3)
+    # print("Input for all motors in daisy chain [4095 encoder based]:", motors_position)
     goal_position = (np.array(motors_position) + np.array(offset)).astype(int).tolist()
     tx_result = ctrl.set_goal_position(goal_position)
-    if tx_result != COMM_SUCCESS:
-        print(f"GroupSyncWrite COMM error: {ctrl._DynamixelController__packet_handler.getTxRxResult(tx_result)}")
-    else:
-        print("All goal positions sent successfully!")
+    # if tx_result != COMM_SUCCESS:
+    #     print(f"GroupSyncWrite COMM error: {ctrl._DynamixelController__packet_handler.getTxRxResult(tx_result)}")
+    # else:
+    #     print("All goal positions sent successfully!")
     return xyz_goal, motors_position
 
 #------------------------------------------------------------SET ORIENTATION FLAG------------------------------------------------------------
-orientation_flag = True
+orientation_flag = False
 
 #------------------------------------------------------------Initial condition------------------------------------------------------------
 x_ee = 0
@@ -537,7 +578,7 @@ y_grip = 0
 z_grip = z_ee + offset_gripper
 gain_translation = 5
 gain_rotation = 5
-gain_gripper = 50
+gain_gripper = 10
 gain_pitch = np.deg2rad(.15)
 pitch_angle = 0
 pitch_angle_old = 0
@@ -550,11 +591,11 @@ if orientation_flag:
 else:
     configuration_to_cartesian = end_effector_position()
     result_J = Jacobian()
+    configuration_to_cartesian_orientation = end_effector_position_orientation()
+    result_J_orientation = Jacobian_orientation()
     xyz_goal = np.array([x_ee, y_ee, z_ee])
     xyz_old = np.array([x_ee, y_ee, z_ee])
     threshold = 1
-    delta_rot_goal = np.array([-0.0631759,  -0.00076718, -0.00548224,  0.00971758, -0.00047295, -0.00153436])
-    delta_rot_old = np.array([-0.0631759,  -0.00076718, -0.00548224,  0.00971758, -0.00047295, -0.00153436])
 
 var = 0
 cut_data_skip = False
@@ -562,13 +603,15 @@ cut_data_skip = False
 delta_rot_goal = np.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])
 delta_rot_old = np.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])
 
-section_limits = [1.15, 0.95, 0.95]
+section_limits = [1.2, 1, 1]
 K = np.diag([1, 1, 1, 1, 1, 1])
 K_inv = np.linalg.inv(K)
 
 motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch = [0] * 9
 motors_position = [motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch]
-
+_, _, _, max_bend_section3 = motor_mapping(0, 0, norm(section_limits[2]))
+min_val = offset[7] - abs(max_bend_section3)
+max_val = offset[7] + abs(max_bend_section3)
 print("\nNow you can use the ps controller")
 print("type c to RETURN IN CALIBRATED POSITION")
 print("type v to MOVE TO DESIRED POSE")
@@ -603,11 +646,15 @@ offset_ps = [joystick.get_axis(i) for i in range(axis_count)]
 print(f"offset_ps (calibrated rest position): {offset_ps}")
 print("Starting input loop...\n")
 #------------------------------------------------------------PANTHER------------------------------------------------------------
-MAX_LINEAR_VEL = 0.18
-MAX_ANGULAR_VEL = 0.23
-MAX_LINEAR_ACC = 0.01
-MAX_ANGULAR_ACC = 0.02
+# MAX_LINEAR_VEL = .18 #18
+# MAX_ANGULAR_VEL = 0.23 #0.23
+# MAX_LINEAR_ACC = 0.01
+# MAX_ANGULAR_ACC = 0.02
 
+MAX_LINEAR_VEL = 0.74
+MAX_ANGULAR_VEL = 0.63
+MAX_LINEAR_ACC = 0.015
+MAX_ANGULAR_ACC = 0.02
 JOY_CUTOFF = 0.2
 
 myPanther = Panther(max_linear_vel=MAX_LINEAR_VEL,
@@ -616,16 +663,32 @@ myPanther = Panther(max_linear_vel=MAX_LINEAR_VEL,
                     max_angular_accel=MAX_ANGULAR_ACC,
                     ip="10.15.20.2", port = 9090)
 
+goal_current = [1193] * 9
+goal_current[0] = 100
+goal_current[4] = 900
+
+ctrl.set_goal_current(goal_current)
+
 #------------------------------------------------------------IK LOOP------------------------------------------------------------
 exit_flag = False
-first_no_input = True
+no_input = True
+command_point = True
+first_stop = True
+moving_keeping_orientation = False
+last_sec_bend = 0
+gripper_position = 0
+gripper_min = 0
+gripper_max = 2200
 
 try:
     while not exit_flag :
         # Check if 'e' key is pressed to exit the loop c
         if keyboard.is_pressed('x'):
             exit_flag = True
-         
+
+        #############################################
+        # USER INPUTS          
+        #############################################
         pygame.event.pump()
         raw_axes = [joystick.get_axis(i) for i in range(axis_count)]
         axes = []
@@ -637,70 +700,25 @@ try:
         buttons = [joystick.get_button(i) for i in range(joystick.get_numbuttons())]
         x_hat, y_hat = joystick.get_hat(0)
 
-        if buttons[2] == 1 : #Go back to calibration pose if "X" on the controller is pressed
-            delta_rot_goal = np.array([np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001)])
-            xyz_goal, motors_position = from_pose_get_cartesian(delta_rot_goal)
-            print(motors_position)
-            xyz_old = xyz_goal.copy()
-            delta_rot_old = delta_rot_goal.copy()
-            
-            print("Calibrated position reached")
+        sm_data = sm.get_array() #get input from the spacemouse to move the arm
+        
+        joystick_zero = np.allclose(sm_data[:6], 0.0, atol=1e-4)
+        axes_zero = np.allclose(axes[2:4], 0.0, atol=1e-2)
+        # gripper_zero     = (sm_data[6] == 0 and sm_data[7] == 0)
+        pitch_zero = (y_hat == 0)
 
-        if buttons[1] == 1: #Go to desierd pose if "B" on the controller is pressed
-            delta_rot_goal = np.array([np.deg2rad(0.01), np.deg2rad(0.01), np.deg2rad(-45), np.deg2rad(0.01), np.deg2rad(45), np.deg2rad(0.01)])
-            xyz_goal, motors_position = from_pose_get_cartesian(delta_rot_goal)
-            print(motors_position)
-            xyz_old = xyz_goal.copy()
-            delta_rot_old = delta_rot_goal.copy()
+        #Bend manually the last section if "LB" or "RB" on the controller are pressed
+        if sm_data[6] == 1:
+            last_sec_bend = 1
+            command_point = False
+        elif sm_data[7] == 1:
+            last_sec_bend = -1
+            command_point = False
+        else:
+            last_sec_bend = 0
+        
 
-        # if buttons[4] == 1 or buttons[5] == 1: #Bend manually the last section if "LB" or "RB" on the controller are pressed
-            # read the actual current motor positions            
-            # raw_positions, _, _, _ = ctrl.read_info(fast_read=False)
-            # goal_position = raw_positions.copy()
-            # motors_position = goal_position - offset
-            # var = 50 * buttons[4]
-            # if buttons [4] == 0:
-            #     var = -50 * buttons[5]
-            # motors_position[7] += var
-            # print(motors_position)
-
-            # delta_rot_goal[1] = convert_motorposition_to_rad(motors_position[1], 2)
-            # delta_rot_goal[3] = convert_motorposition_to_rad(motors_position[4], 3)
-            # delta_rot_goal[5] = convert_motorposition_to_rad(motors_position[6], 2)
-            # if motors_position[5] > 0:
-            #     motors_position[5] *= (9 / 10)
-            # if motors_position[7] > 0:
-            #     motors_position[7] *= (9 / 10) 
-            # if motors_position[2] < motors_position[3]:
-            #     delta_1, delta_1_ext, delta_2, delta_3 = motor_mapping.inverse(motors_position[2], motors_position[3], -norm(motors_position[5]), -norm(motors_position[7]))
-            # else:
-            #     delta_1, delta_1_ext, delta_2, delta_3 = motor_mapping.inverse(motors_position[3], motors_position[2], -norm(motors_position[5]), -norm(motors_position[7]))
-            #     delta_1 = - delta_1
-            #     delta_1_ext = - delta_1_ext
-            # if motors_position[5] > 0:
-            #     delta_2 = - delta_2
-            # if motors_position[7] > 0:
-            #     delta_3 = - delta_3
-            # delta_rot_goal[0] = delta_1
-            # delta_rot_goal[2] = delta_2
-            # delta_rot_goal[4] = delta_3
-            # print("CONFIGURATION EVALUATED", delta_rot_goal)
-            # delta_rot_old = delta_rot_goal.copy()
-            # xyz_goal = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
-            #         delta_rot_goal[2], delta_rot_goal[3], 
-            #         delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
-            # print("CARTESIAN COORDINATES", xyz_goal)
-            # xyz_old = xyz_goal.copy()
-
-            # # print("1", delta_rot_goal)
-            # # xyz_goal, delta_rot_goal = cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_inv)
-            # # xyz_old = xyz_goal.copy()
-            # # print("2", delta_rot_goal)
-
-            # pitch_angle = convert_motorposition_to_rad(motors_position[8], ((200/25) * (22/15)*2))
-            # pitch_angle_old = pitch_angle.copy()
-
-        # PANTHER STUFF
+        # PANTHER
         fwd = axes[1] * -1
         trn = axes[0] * -1
         if abs(fwd) < JOY_CUTOFF:
@@ -711,139 +729,190 @@ try:
         trn_vel = MAX_ANGULAR_VEL * trn
 
         myPanther.command_robot(fwd_vel, trn_vel) #get input from the controller to move the panther
-        
-        sm_data = sm.get_array() #get input from the spacemouse to move the arm
 
-        joystick_zero = np.allclose(sm_data[:6], 0.0, atol=1e-4)
-        gripper_zero     = (sm_data[6] == 0 and sm_data[7] == 0)
-        pitch_zero = (y_hat == 0)
-
-        if orientation_flag:
-            xyz_goal, pitch_angle = update_goals_with_spacemouse_pitch_orientation(xyz_goal, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, sm_data)
-        else:
-            xyz_goal, pitch_angle = update_goals_with_spacemouse_pitch(xyz_goal, pitch_angle, y_hat, gain_translation, gain_pitch, sm_data)
-
+        #############################################
+        # GRIPPER
+        #############################################
         gripper_flag = False
-        if sm_data[6] != 0:
+        if buttons[5] != 0:
             motor_gripper += gain_gripper
-            gripper_flag = True
-        if sm_data[7] != 0:
+        if buttons[4] != 0:
             motor_gripper -= gain_gripper
-            gripper_flag = True
+
+        motor_gripper = max(min(gripper_max, motor_gripper), gripper_min)
         
-        if gripper_flag:
-            gripper_flag = False
-            goal_gripper = int(motor_gripper + offset[0])
-            raw_positions, _, _, _ = ctrl.read_info(fast_read=False)
-            goal_position = raw_positions.tolist()
-            goal_position[0] = goal_gripper
+        #############################################
+        # HANDLING NO INPUT
+        #############################################
+        if joystick_zero and pitch_zero and axes_zero:
+            no_input = True
+        else:
+            no_input = False
+            command_point = False
 
-            tx_result = ctrl.set_goal_position(goal_position)
 
-            if tx_result != COMM_SUCCESS:
-                err_str = ctrl._packet_handler.getTxRxResult(tx_result)
-                print(f"Motor ID 10 communication error: {err_str}")
+        #############################################
+        # COMMAND POINTS
+        #############################################
+        is_command_point_pressed = False
+
+        if buttons[0] == 1: #Go to desierd pose if "A" on the controller is pressed, CALIBRATION
+            delta_rot_goal = np.array([np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001)])
+            pitch_angle = np.deg2rad(0)
+            is_command_point_pressed = True
+
+        if buttons[1] == 1: #Go to desierd pose if "B" on the controller is pressed, RIGHT
+            delta_rot_goal = np.array([np.deg2rad(30), np.deg2rad(-90), np.deg2rad(45), np.deg2rad(180), np.deg2rad(45), np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(0)
+            is_command_point_pressed = True
+        
+        if buttons[2] == 1: #Go to desierd pose if "X" on the controller is pressed, LEFT
+            delta_rot_goal = np.array([np.deg2rad(30), np.deg2rad(90), np.deg2rad(45), np.deg2rad(180), np.deg2rad(45), np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(0)
+            is_command_point_pressed = True
+
+        if buttons[3] == 1: #Go to desierd pose if "Y" on the controller is pressed, FRONT
+            delta_rot_goal = np.array([np.deg2rad(30), np.deg2rad(0.01), np.deg2rad(30), np.deg2rad(180), np.deg2rad(30), np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(0)
+            is_command_point_pressed = True
+
+        if buttons[7] == 1: #Go to desierd pose if "menu" on the controller is pressed, back to the box
+            delta_rot_goal = np.array([-section_limits[0], np.deg2rad(0), section_limits[1], np.deg2rad(10), section_limits[2], np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(50)
+            is_command_point_pressed = True
+
+        if abs(axes[3]) < 0.07:
+            axes[3] = 0
+        if abs(axes[2]) < 0.07:
+            axes[2] = 0
+
+        print(axes[3], axes[2])
+        if axes[3] != 0 or axes[2] != 0: #Move in the plane for raspberry
+            moving_keeping_orientation = True
+            xyz_orientation = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1], 
+                    delta_rot_goal[2], delta_rot_goal[3], 
+                    delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+            xyz_orientation_old = xyz_orientation.copy()
+            xyz_orientation, pitch_angle = translation_keeping_orientation(xyz_orientation, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, axes)
+            xyz_orientation, delta_rot_goal = cartesian_configuration(xyz_orientation, xyz_orientation_old, delta_rot_goal, delta_rot_old, K_inv)
+            # is_command_point_pressed = True
+            command_point = True
+
+        if is_command_point_pressed:
+            xyz_goal, motors_position = from_pose_get_cartesian(delta_rot_goal, pitch_angle)
+            # print(motors_position)
+            xyz_old = xyz_goal.copy()
+            delta_rot_old = delta_rot_goal.copy()
+            command_point = True
+
+        #############################################
+        # INVERSE KINEMATICS
+        #############################################
+        if moving_keeping_orientation:
+            moving_keeping_orientation = False
+            if not orientation_flag:
+                xyz_goal = xyz_orientation[:3]
+        else:
+            if orientation_flag:
+                xyz_goal, pitch_angle = update_goals_with_spacemouse_pitch_orientation(xyz_goal, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, sm_data)
             else:
-                print(f"Motor ID 10 moving to raw position {goal_gripper}")
-
-        if joystick_zero and gripper_zero and pitch_zero:
-            print("NO input")
-            if first_no_input:
-                raw_positions, _, _, _ = ctrl.read_info(fast_read=False)
-                goal_position = raw_positions.copy()
-                motors_position = goal_position - offset
-                print(motors_position)
-                delta_rot_goal[1] = convert_motorposition_to_rad(motors_position[1], 2)
-                delta_rot_goal[3] = convert_motorposition_to_rad(motors_position[4], 3)
-                delta_rot_goal[5] = convert_motorposition_to_rad(motors_position[6], 2)
-                if motors_position[5] > 0:
-                    motors_position[5] *= (9 / 10)
-                if motors_position[7] > 0:
-                    motors_position[7] *= (9 / 10) 
-                if motors_position[2] < motors_position[3]:
-                    delta_1, delta_1_ext, delta_2, delta_3 = motor_mapping.inverse(motors_position[2], motors_position[3], -norm(motors_position[5]), -norm(motors_position[7]))
-                else:
-                    delta_1, delta_1_ext, delta_2, delta_3 = motor_mapping.inverse(motors_position[3], motors_position[2], -norm(motors_position[5]), -norm(motors_position[7]))
-                    delta_1 = - delta_1
-                    delta_1_ext = - delta_1_ext
-                if motors_position[5] > 0:
-                    delta_2 = - delta_2
-                if motors_position[7] > 0:
-                    delta_3 = - delta_3
-                delta_rot_goal[0] = delta_1
-                delta_rot_goal[2] = delta_2
-                delta_rot_goal[4] = delta_3
-                print("CONFIGURATION EVALUATED", delta_rot_goal)
-                delta_rot_old = delta_rot_goal.copy()
-                xyz_goal = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
-                        delta_rot_goal[2], delta_rot_goal[3], 
-                        delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
-                print("CARTESIAN COORDINATES", xyz_goal)
-                xyz_old = xyz_goal.copy()
-
-                # print("1", delta_rot_goal)
-                # xyz_goal, delta_rot_goal = cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_inv)
-                # xyz_old = xyz_goal.copy()
-                # print("2", delta_rot_goal)
-
-                pitch_angle = convert_motorposition_to_rad(motors_position[8], ((200/25) * (22/15)*2))
-                pitch_angle_old = pitch_angle.copy()
-
-                cut_data_skip = True
-                first_no_input = False
-            else:
-                pass
-            
-        if cut_data_skip == False:
-            print("YES input")
-            print("\n xyz_old:", xyz_old)
-            print("xyz_goal:", xyz_goal)
+                xyz_goal, pitch_angle = update_goals_with_spacemouse_pitch(xyz_goal, pitch_angle, y_hat, gain_translation, gain_pitch, sm_data)
 
             xyz_goal, delta_rot_goal = cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_inv)
             # Delta, Rot = adjust_configuration(delta_rot_goal, delta_rot_old)
-            Rot = np.array([delta_rot_goal[1], delta_rot_goal[3], delta_rot_goal[5]])
-            Delta = np.array([delta_rot_goal[0], delta_rot_goal[2], delta_rot_goal[4]])
+        
+        Rot = np.array([delta_rot_goal[1], delta_rot_goal[3], delta_rot_goal[5]])
+        Delta = np.array([delta_rot_goal[0], delta_rot_goal[2], delta_rot_goal[4]])
 
-            print("xyz_current:", xyz_goal)
-            if orientation_flag:
-                x_ee, y_ee, z_ee, x_grip, y_grip, z_grip = xyz_goal
+        # print("xyz_current:", xyz_goal)
+        if orientation_flag:
+            x_ee, y_ee, z_ee, x_grip, y_grip, z_grip = xyz_goal
+        else:
+            x_ee, y_ee, z_ee = xyz_goal
+        # print("delta_rot_current:", delta_rot_goal)
+
+        xyz_old = xyz_goal.copy()
+        delta_rot_old = delta_rot_goal.copy()
+        pitch_angle_old = pitch_angle.copy()
+
+        # print("\nTotal bending for each section [deg]:", np.rad2deg(Delta))
+        # print("Total rotation for each section [deg]:", np.rad2deg(Rot))
+        # print("Total pitch for the base [deg]:", np.rad2deg(pitch_angle)) 
+        
+        if Delta [0] > 0:
+            motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3 = motor_mapping(Delta[0], norm(Delta[1]), norm(Delta[2]))
+        else:
+            motor2_bend_section1, motor1_bend_section1, motor_bend_section2, motor_bend_section3 = motor_mapping(norm(Delta[0]), norm(Delta[1]), norm(Delta[2]))
+        if Delta[2] < 0:
+            motor_bend_section3 = - int(motor_bend_section3 * 10 / 9)
+        if Delta[1] < 0:
+            motor_bend_section2 = - int(motor_bend_section2 * 10 / 9)
+        motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 2)
+        motor_rot_section2 = convert_rad_to_motorposition(Rot[1], 3)
+        motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 2)
+        motor_pitch = convert_rad_to_motorposition(pitch_angle, ((200/25) * (22/15))*2 )
+        motors_position = [motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch]
+        # print("Input for the rotary motors [4095 encoder based]:", motor_rot_section1, motor_rot_section2, motor_rot_section3)
+        # print("Input for bending motors [4095 encoder based]:", motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3)
+        # print("Input for pitch motors [4095 encoder based]:", motor_pitch)
+        # print("Input for all motors in daisy chain [4095 encoder based]:", motors_position)
+
+        goal_position = (np.array(motors_position) + np.array(offset)).astype(int).tolist()
+
+        # print("No input", no_input, " cmd point", command_point)
+        if (no_input == True) and (command_point == False):
+            # print("No input")
+            if first_stop:
+                raw_positions , _, _, _ = ctrl.read_info(fast_read=False)
+
+            first_stop = False
+
+            goal_position = raw_positions.copy()
+            goal_position[7] += (last_sec_bend * 20)
+            if goal_position[7] < min_val or goal_position[7] > max_val:
+                goal_position[7] = max(min(goal_position[7], max_val), min_val)
+
+            raw_positions = goal_position.copy()
+            motors_position = goal_position - offset
+
+            # print(motors_position)
+            delta_rot_goal[1] = convert_motorposition_to_rad(motors_position[1], 2)
+            delta_rot_goal[3] = convert_motorposition_to_rad(motors_position[4], 3)
+            delta_rot_goal[5] = convert_motorposition_to_rad(motors_position[6], 2)
+            if motors_position[5] > 0:
+                motors_position[5] *= (9 / 10)
+            if motors_position[7] > 0:
+                motors_position[7] *= (9 / 10) 
+            if motors_position[2] < motors_position[3]:
+                delta_1, delta_1_ext, delta_2, delta_3 = motor_mapping.inverse(motors_position[2], motors_position[3], -norm(motors_position[5]), -norm(motors_position[7]))
             else:
-                x_ee, y_ee, z_ee = xyz_goal
-            print("delta_rot_current:", delta_rot_goal)
-
-            xyz_old = xyz_goal.copy()
+                delta_1, delta_1_ext, delta_2, delta_3 = motor_mapping.inverse(motors_position[3], motors_position[2], -norm(motors_position[5]), -norm(motors_position[7]))
+                delta_1 = - delta_1
+                delta_1_ext = - delta_1_ext
+            if motors_position[5] > 0:
+                delta_2 = - delta_2
+            if motors_position[7] > 0:
+                delta_3 = - delta_3
+            delta_rot_goal[0] = delta_1
+            delta_rot_goal[2] = delta_2
+            delta_rot_goal[4] = delta_3
+            # print("CONFIGURATION EVALUATED", delta_rot_goal)
             delta_rot_old = delta_rot_goal.copy()
+            xyz_goal = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
+                    delta_rot_goal[2], delta_rot_goal[3], 
+                    delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+            # print("CARTESIAN COORDINATES", xyz_goal)
+            xyz_old = xyz_goal.copy()
+
+            pitch_angle = convert_motorposition_to_rad(motors_position[8], ((200/25) * (22/15)*2))
             pitch_angle_old = pitch_angle.copy()
 
-            print("\nTotal bending for each section [deg]:", np.rad2deg(Delta))
-            print("Total rotation for each section [deg]:", np.rad2deg(Rot))
-            print("Total pitch for the base [deg]:", np.rad2deg(pitch_angle)) 
-            if Delta [0] > 0:
-                motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3 = motor_mapping(Delta[0], norm(Delta[1]), norm(Delta[2]))
-            else:
-                motor2_bend_section1, motor1_bend_section1, motor_bend_section2, motor_bend_section3 = motor_mapping(norm(Delta[0]), norm(Delta[1]), norm(Delta[2]))
-            if Delta[2] < 0:
-                motor_bend_section3 = - int(motor_bend_section3 * 10 / 9)
-            if Delta[1] < 0:
-                motor_bend_section2 = - int(motor_bend_section2 * 10 / 9)
-            motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 2)
-            motor_rot_section2 = convert_rad_to_motorposition(Rot[1], 3)
-            motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 2)
-            motor_pitch = convert_rad_to_motorposition(pitch_angle, ((200/25) * (22/15))*2 )
-            motors_position = [motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch]
-            print("Input for the rotary motors [4095 encoder based]:", motor_rot_section1, motor_rot_section2, motor_rot_section3)
-            print("Input for bending motors [4095 encoder based]:", motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3)
-            print("Input for pitch motors [4095 encoder based]:", motor_pitch)
-            print("Input for all motors in daisy chain [4095 encoder based]:", motors_position)
+        else:
+            first_stop = True
 
-
-            # timer = time.time()
-            goal_position = (np.array(motors_position) + np.array(offset)).astype(int).tolist()
-
+        print(motor_gripper)
+        goal_position[0] = motor_gripper + offset[0]
         tx_result = ctrl.set_goal_position(goal_position)
-
-        if cut_data_skip:
-            cut_data_skip = False
 
 finally:
     pygame.quit()

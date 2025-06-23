@@ -48,6 +48,7 @@ except PortCommError as e:
 # -------------------------------------------------------------------------
 # Put all motors into Extended Position Mode (multi-turn), and enable torque.
 # -------------------------------------------------------------------------
+controller.torque_off()
 controller.set_operating_mode_all("extended_position_control")
 time.sleep(0.1)
 controller.torque_on()
@@ -134,3 +135,30 @@ with open("offset.pkl", "wb") as f:
     pickle.dump(offset, f)
 print("Offset saved to offset.pkl")
 
+# from dynamixel_sdk import PortHandler, PacketHandler, COMM_SUCCESS
+# from dynamixel_controller import BaseModel
+
+# PORT = PortHandler("COM13")
+# PACKET = PacketHandler(2.0)
+
+# assert PORT.openPort(), "Cannot open port"
+# assert PORT.setBaudRate(57600), "Cannot set baud"
+
+# ID = 20
+# GOAL_POS = 0  # +100 ticks from center
+# TORQUE_ON = 1
+
+# # enable torque
+# err, e = PACKET.write1ByteTxRx(PORT, ID, BaseModel.torque_enable.address, TORQUE_ON)
+# if err != COMM_SUCCESS or e != 0:
+#     print("Torque-on failed", err, e)
+
+# # set position
+# err, e = PACKET.write4ByteTxRx(PORT, ID, BaseModel.goal_position.address, GOAL_POS)
+# if err != COMM_SUCCESS or e != 0:
+#     print("Pos write failed", err, e)
+
+# # wait & read back
+# import time; time.sleep(0.5)
+# pos = PACKET.read4ByteTxRx(PORT, ID, BaseModel.present_position.address)
+# print("Read back position:", pos)

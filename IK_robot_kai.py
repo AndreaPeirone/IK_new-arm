@@ -32,8 +32,8 @@ print("All motors are now in extended‑position mode with torque enabled!")
 #SET VELOCITY
 set_velocity = 50
 vel_list     = [set_velocity] * len(ids_list)
-idx14        = ids_list.index(14)
-vel_list[idx14] = int(set_velocity * 3/2)
+idx11        = ids_list.index(11)
+vel_list[idx11] = int(set_velocity * 2)
 
 tx_result = ctrl.set_profile_velocity(vel_list)
 if tx_result != 0:
@@ -550,9 +550,9 @@ def from_pose_get_cartesian(delta_rot_goal, pitch_angle):
         motor_bend_section3 = - int(motor_bend_section3 * 10 / 9)
     if Delta[1] < 0:
         motor_bend_section2 = - int(motor_bend_section2 * 10 / 9)
-    motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 2)
+    motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 4)
     motor_rot_section2 = convert_rad_to_motorposition(Rot[1], 3)
-    motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 2)
+    motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 3)
     motor_pitch = convert_rad_to_motorposition(pitch_angle, ((200/25) * (22/15))*2 )
     motors_position = [motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch]
     # print("Input for the rotary motors [4095 encoder based]:", motor_rot_section1, motor_rot_section2, motor_rot_section3)
@@ -847,9 +847,9 @@ try:
             motor_bend_section3 = - int(motor_bend_section3 * 10 / 9)
         if Delta[1] < 0:
             motor_bend_section2 = - int(motor_bend_section2 * 10 / 9)
-        motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 2)
+        motor_rot_section1 = convert_rad_to_motorposition(Rot[0], 4)
         motor_rot_section2 = convert_rad_to_motorposition(Rot[1], 3)
-        motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 2)
+        motor_rot_section3 = convert_rad_to_motorposition(Rot[2], 3)
         motor_pitch = convert_rad_to_motorposition(pitch_angle, ((200/25) * (22/15))*2 )
         motors_position = [motor_gripper, motor_rot_section1, motor1_bend_section1, motor2_bend_section1, motor_rot_section2, motor_bend_section2, motor_rot_section3, motor_bend_section3, motor_pitch]
         # print("Input for the rotary motors [4095 encoder based]:", motor_rot_section1, motor_rot_section2, motor_rot_section3)
@@ -876,9 +876,9 @@ try:
             motors_position = goal_position - offset
 
             # print(motors_position)
-            delta_rot_goal[1] = convert_motorposition_to_rad(motors_position[1], 2)
+            delta_rot_goal[1] = convert_motorposition_to_rad(motors_position[1], 4)
             delta_rot_goal[3] = convert_motorposition_to_rad(motors_position[4], 3)
-            delta_rot_goal[5] = convert_motorposition_to_rad(motors_position[6], 2)
+            delta_rot_goal[5] = convert_motorposition_to_rad(motors_position[6], 3)
             if motors_position[5] > 0:
                 motors_position[5] *= (9 / 10)
             if motors_position[7] > 0:

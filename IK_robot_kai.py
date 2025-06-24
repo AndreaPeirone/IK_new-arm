@@ -33,7 +33,11 @@ print("All motors are now in extended‑position mode with torque enabled!")
 set_velocity = 50
 vel_list     = [set_velocity] * len(ids_list)
 idx11        = ids_list.index(11)
-vel_list[idx11] = int(set_velocity * 2)
+vel_list[idx11] = int(set_velocity * 4/3) # Adjust velocity for motor 11 (base1) to be 4/3 of the set velocity
+idx13        = ids_list.index(12)
+vel_list[idx13] = int(set_velocity * 2)
+idx13        = ids_list.index(12)
+vel_list[idx13] = int(set_velocity * 2)
 
 tx_result = ctrl.set_profile_velocity(vel_list)
 if tx_result != 0:
@@ -67,8 +71,8 @@ with open('combined_motor_mapping.pkl', 'rb') as f:
 
 #------------------------------------------------------------FUNCTIONS------------------------------------------------------------
 #Geometric parameters
-L1 = 305 #height 1st section [mm]
-L2 = 225 #height 2nd section [mm]
+L1 = 228 #height 1st section [mm]
+L2 = 228 #height 2nd section [mm]
 L3 = 228 #height 3rd section [mm]
 d = 120  #Tuned diameter of the base [mm]
 offset_gripper = 50 #height of the gripper centre [mm]
@@ -597,13 +601,10 @@ else:
     xyz_old = np.array([x_ee, y_ee, z_ee])
     threshold = 1
 
-var = 0
-cut_data_skip = False
-
 delta_rot_goal = np.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])
 delta_rot_old = np.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])
 
-section_limits = [1.2, 1, 1]
+section_limits = [1.4, 1.2, 1.2]
 K = np.diag([1, 1, 1, 1, 1, 1])
 K_inv = np.linalg.inv(K)
 

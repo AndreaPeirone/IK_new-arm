@@ -34,9 +34,9 @@ set_velocity = 50
 vel_list     = [set_velocity] * len(ids_list)
 idx11        = ids_list.index(11)
 vel_list[idx11] = int(set_velocity * 4/3) # Adjust velocity for motor 11 (base1) to be 4/3 of the set velocity
-idx13        = ids_list.index(12)
-vel_list[idx13] = int(set_velocity * 2)
-idx13        = ids_list.index(12)
+idx12        = ids_list.index(12)
+vel_list[idx12] = int(set_velocity * 2)
+idx13        = ids_list.index(13)
 vel_list[idx13] = int(set_velocity * 2)
 
 tx_result = ctrl.set_profile_velocity(vel_list)
@@ -57,6 +57,7 @@ time.sleep(1)
 
 #Initial condition
 goal_position = (np.array(offset)).astype(int).tolist()
+print(f"Initial goal positions (multi‑turn raw values): {goal_position}")
 tx_result = ctrl.set_goal_position(goal_position)
 if tx_result != COMM_SUCCESS:
     print(f"GroupSyncWrite COMM error: {ctrl._DynamixelController__packet_handler.getTxRxResult(tx_result)}")
@@ -212,7 +213,6 @@ def cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_
     J_inv = np.dot(K_inv, np.dot(J_transposed, inv_JK_inv_J_transposed))
     delta_rot_goal += np.dot(J_inv, e)
     
-    # print("delta_rot_current before boundaries", delta_rot_goal)
     delta_rot_goal, K_inv = check_boundaries(delta_rot_goal, K_inv)
     if moving_keeping_orientation:
         end_effector = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1],
@@ -248,8 +248,8 @@ def cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_
         J_inv = np.dot(K_inv, np.dot(J_transposed, inv_JK_inv_J_transposed))
         delta_rot_goal += np.dot(J_inv, e)
 
-        # print("delta_rot_current before boundaries", delta_rot_goal)
         delta_rot_goal, K_inv = check_boundaries(delta_rot_goal, K_inv)
+        print("delta_rot_current after boundaries line 252", delta_rot_goal)
 
         if moving_keeping_orientation:
             end_effector = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1],
@@ -278,19 +278,22 @@ def check_boundaries(delta_rot_goal, K_inv_original):
     K_inv = K_inv_original.copy()
     eps = 1e-2
 
-    if norm(delta_rot_goal[0]) > section_limits[0]:
+    if norm(delta_rot_goal[0]) >= section_limits[0]:
         print("----------------------------------Max bending on 1st section reached----------------------------------")
         delta_rot_goal[0] = np.sign(delta_rot_goal[0]) * section_limits[0]
+        print(delta_rot_goal[0])
         K_inv [0,0] = K_inv[0,0] / 1e6
 
-    if norm(delta_rot_goal[2]) > section_limits[1]:
+    if norm(delta_rot_goal[2]) >= section_limits[1]:
         print("----------------------------------Max bending on 2nd section reached----------------------------------")
         delta_rot_goal[2] = np.sign(delta_rot_goal[2]) * section_limits[1]
+        print(delta_rot_goal[2])
         K_inv [2,2] = K_inv[2,2] / 1e6
     
-    if norm(delta_rot_goal[4]) > section_limits[2]:
+    if norm(delta_rot_goal[4]) >= section_limits[2]:
         print("----------------------------------Max bending on 3rd section reached----------------------------------")
         delta_rot_goal[4] = np.sign(delta_rot_goal[4]) * section_limits[2]
+        print(delta_rot_goal[4])
         K_inv [4,4] = K_inv[4,4] / 1e6 
 
     if np.isnan(delta_rot_goal[0]):
@@ -601,10 +604,10 @@ else:
     xyz_old = np.array([x_ee, y_ee, z_ee])
     threshold = 1
 
-delta_rot_goal = np.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])
-delta_rot_old = np.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])
+delta_rot_goal = np.array([np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001)])
+delta_rot_old = np.array([np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001), np.deg2rad(0.001)])
 
-section_limits = [1.4, 1.2, 1.2]
+section_limits = [1.25, 1.1, 1.05] #Constraints for the bending DUE TO THE MAPPING
 K = np.diag([1, 1, 1, 1, 1, 1])
 K_inv = np.linalg.inv(K)
 
@@ -704,20 +707,9 @@ try:
         sm_data = sm.get_array() #get input from the spacemouse to move the arm
         
         joystick_zero = np.allclose(sm_data[:6], 0.0, atol=1e-4)
-        axes_zero = np.allclose(axes[2:4], 0.0, atol=1e-2)
+        axes_zero = np.allclose(axes[2:4], 0.0, atol=1e-1)
         # gripper_zero     = (sm_data[6] == 0 and sm_data[7] == 0)
-        pitch_zero = (y_hat == 0)
-
-        #Bend manually the last section if "LB" or "RB" on the controller are pressed
-        if sm_data[6] == 1:
-            last_sec_bend = 1
-            command_point = False
-        elif sm_data[7] == 1:
-            last_sec_bend = -1
-            command_point = False
-        else:
-            last_sec_bend = 0
-        
+        pitch_zero = (y_hat == 0)        
 
         # PANTHER
         fwd = axes[1] * -1
@@ -751,7 +743,6 @@ try:
             no_input = False
             command_point = False
 
-
         #############################################
         # COMMAND POINTS
         #############################################
@@ -762,42 +753,53 @@ try:
             pitch_angle = np.deg2rad(0)
             is_command_point_pressed = True
 
-        if buttons[1] == 1: #Go to desierd pose if "B" on the controller is pressed, RIGHT
-            delta_rot_goal = np.array([np.deg2rad(30), np.deg2rad(-90), np.deg2rad(45), np.deg2rad(180), np.deg2rad(45), np.deg2rad(-180)])
+        if buttons[6] == 1: #Go to desierd pose if "double screen" on the controller is pressed, 3d pose
+            delta_rot_goal = np.array([np.deg2rad(-45), np.deg2rad(0), np.deg2rad(60), np.deg2rad(-90), np.deg2rad(60), np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(0)
+            is_command_point_pressed = True
+
+        if buttons[7] == 1: #Go to desierd pose if "menu" on the controller is pressed, back to the box for raspberry
+            delta_rot_goal = np.array([-section_limits[0], np.deg2rad(0), section_limits[1], np.deg2rad(0), section_limits[2], np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(45)
+            is_command_point_pressed = True
+
+        #############################################
+        # SEQUENTIAL COMMANDS TO BASIC MOVEMENTS
+        #############################################
+
+        if buttons[3] == 1: #Go to desierd pose if "Y" on the controller is pressed, down to the table in front of the robot
+            delta_rot_goal = np.array([np.deg2rad(60), np.deg2rad(0.01), np.deg2rad(45), np.deg2rad(180), np.deg2rad(45), np.deg2rad(-180)])
             pitch_angle = np.deg2rad(0)
             is_command_point_pressed = True
         
-        if buttons[2] == 1: #Go to desierd pose if "X" on the controller is pressed, LEFT
-            delta_rot_goal = np.array([np.deg2rad(30), np.deg2rad(90), np.deg2rad(45), np.deg2rad(180), np.deg2rad(45), np.deg2rad(-180)])
+        if buttons[1] == 1: #if "B" on the controller is pressed: from "Y" pose move forward on the table 
+            delta_rot_goal = np.array([np.deg2rad(60), np.deg2rad(0.01), np.deg2rad(0.001), np.deg2rad(180), np.deg2rad(30), np.deg2rad(-180)])
+            pitch_angle = np.deg2rad(20)
+            is_command_point_pressed = True
+        
+        if buttons[2] == 1: #if "X" on the controller is pressed: from "Y" pose move to the left on the table 
+            delta_rot_goal = np.array([np.deg2rad(70), np.deg2rad(30), np.deg2rad(45 - 10 ), np.deg2rad(180 - 20), np.deg2rad(45 -10), np.deg2rad(-180 + 40)])
             pitch_angle = np.deg2rad(0)
             is_command_point_pressed = True
 
-        if buttons[3] == 1: #Go to desierd pose if "Y" on the controller is pressed, FRONT
-            delta_rot_goal = np.array([np.deg2rad(30), np.deg2rad(0.01), np.deg2rad(30), np.deg2rad(180), np.deg2rad(30), np.deg2rad(-180)])
-            pitch_angle = np.deg2rad(0)
-            is_command_point_pressed = True
 
-        if buttons[7] == 1: #Go to desierd pose if "menu" on the controller is pressed, back to the box
-            delta_rot_goal = np.array([-section_limits[0], np.deg2rad(0), section_limits[1], np.deg2rad(10), section_limits[2], np.deg2rad(-180)])
-            pitch_angle = np.deg2rad(50)
-            is_command_point_pressed = True
 
-        if abs(axes[3]) < 0.07:
-            axes[3] = 0
-        if abs(axes[2]) < 0.07:
-            axes[2] = 0
+        # if abs(axes[3]) < 0.07:
+        #     axes[3] = 0
+        # if abs(axes[2]) <0.07:
+        #     axes[2] = 0
 
-        print(axes[3], axes[2])
-        if axes[3] != 0 or axes[2] != 0: #Move in the plane for raspberry
-            moving_keeping_orientation = True
-            xyz_orientation = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1], 
-                    delta_rot_goal[2], delta_rot_goal[3], 
-                    delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
-            xyz_orientation_old = xyz_orientation.copy()
-            xyz_orientation, pitch_angle = translation_keeping_orientation(xyz_orientation, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, axes)
-            xyz_orientation, delta_rot_goal = cartesian_configuration(xyz_orientation, xyz_orientation_old, delta_rot_goal, delta_rot_old, K_inv)
-            # is_command_point_pressed = True
-            command_point = True
+        # # print(axes[3], axes[2])
+        # if axes[3] != 0 or axes[2] != 0: #Move in the plane for raspberry
+        #     moving_keeping_orientation = True
+        #     xyz_orientation = configuration_to_cartesian_orientation(delta_rot_goal[0], delta_rot_goal[1], 
+        #             delta_rot_goal[2], delta_rot_goal[3], 
+        #             delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
+        #     xyz_orientation_old = xyz_orientation.copy()
+        #     xyz_orientation, pitch_angle = translation_keeping_orientation(xyz_orientation, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, axes)
+        #     xyz_orientation, delta_rot_goal = cartesian_configuration(xyz_orientation, xyz_orientation_old, delta_rot_goal, delta_rot_old, K_inv)
+        #     # is_command_point_pressed = True
+        #     command_point = True
 
         if is_command_point_pressed:
             xyz_goal, motors_position = from_pose_get_cartesian(delta_rot_goal, pitch_angle)
@@ -807,18 +809,29 @@ try:
             command_point = True
 
         #############################################
+        #Bend manually the last section with buttons on spacemouse
+        #############################################
+        if sm_data[6] == 1:
+            last_sec_bend = 1
+            command_point = False
+        elif sm_data[7] == 1:
+            last_sec_bend = -1
+            command_point = False
+        else:
+            last_sec_bend = 0
+
+        #############################################
         # INVERSE KINEMATICS
         #############################################
         if moving_keeping_orientation:
             moving_keeping_orientation = False
-            if not orientation_flag:
-                xyz_goal = xyz_orientation[:3]
+            # if not orientation_flag:
+            #     xyz_goal = xyz_orientation[:3]
         else:
             if orientation_flag:
                 xyz_goal, pitch_angle = update_goals_with_spacemouse_pitch_orientation(xyz_goal, pitch_angle, y_hat, gain_translation, gain_rotation, gain_pitch, sm_data)
             else:
                 xyz_goal, pitch_angle = update_goals_with_spacemouse_pitch(xyz_goal, pitch_angle, y_hat, gain_translation, gain_pitch, sm_data)
-
             xyz_goal, delta_rot_goal = cartesian_configuration(xyz_goal, xyz_old, delta_rot_goal, delta_rot_old, K_inv)
             # Delta, Rot = adjust_configuration(delta_rot_goal, delta_rot_old)
         
@@ -835,11 +848,6 @@ try:
         xyz_old = xyz_goal.copy()
         delta_rot_old = delta_rot_goal.copy()
         pitch_angle_old = pitch_angle.copy()
-
-        # print("\nTotal bending for each section [deg]:", np.rad2deg(Delta))
-        # print("Total rotation for each section [deg]:", np.rad2deg(Rot))
-        # print("Total pitch for the base [deg]:", np.rad2deg(pitch_angle)) 
-        
         if Delta [0] > 0:
             motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3 = motor_mapping(Delta[0], norm(Delta[1]), norm(Delta[2]))
         else:
@@ -857,7 +865,6 @@ try:
         # print("Input for bending motors [4095 encoder based]:", motor1_bend_section1, motor2_bend_section1, motor_bend_section2, motor_bend_section3)
         # print("Input for pitch motors [4095 encoder based]:", motor_pitch)
         # print("Input for all motors in daisy chain [4095 encoder based]:", motors_position)
-
         goal_position = (np.array(motors_position) + np.array(offset)).astype(int).tolist()
 
         # print("No input", no_input, " cmd point", command_point)
@@ -894,15 +901,19 @@ try:
                 delta_2 = - delta_2
             if motors_position[7] > 0:
                 delta_3 = - delta_3
+            if delta_1 > section_limits[0]:
+                delta_1 = section_limits[0]
+            if delta_2 > section_limits[1]:
+                delta_2 = section_limits[1]
+            if delta_3 > section_limits[2]:
+                delta_3 = section_limits[2]
             delta_rot_goal[0] = delta_1
             delta_rot_goal[2] = delta_2
             delta_rot_goal[4] = delta_3
-            # print("CONFIGURATION EVALUATED", delta_rot_goal)
             delta_rot_old = delta_rot_goal.copy()
             xyz_goal = configuration_to_cartesian(delta_rot_goal[0], delta_rot_goal[1], 
                     delta_rot_goal[2], delta_rot_goal[3], 
                     delta_rot_goal[4], delta_rot_goal[5]).reshape(-1)
-            # print("CARTESIAN COORDINATES", xyz_goal)
             xyz_old = xyz_goal.copy()
 
             pitch_angle = convert_motorposition_to_rad(motors_position[8], ((200/25) * (22/15)*2))
@@ -910,8 +921,6 @@ try:
 
         else:
             first_stop = True
-
-        print(motor_gripper)
         goal_position[0] = motor_gripper + offset[0]
         tx_result = ctrl.set_goal_position(goal_position)
 
